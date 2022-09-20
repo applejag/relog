@@ -137,7 +137,7 @@ func (r *Relogger) processLineJson(b []byte) bool {
 		}
 	}
 
-	timestampNodeName, timestampNode := findWithAnyName(root, "time", "timestamp", "datetime")
+	timestampNodeName, timestampNode := findWithAnyName(root, "time", "timestamp", "ts", "datetime")
 	if t, ok := parseTimestampNode(timestampNode); ok {
 		parsedTime = t
 		ignoreNodes = append(ignoreNodes, timestampNodeName)
@@ -236,7 +236,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 	var fields []Pair
 	for d.ScanKeyval() {
 		pair := Pair{string(d.Key()), string(d.Value())}
-		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "datetime") {
+		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "ts" || pair.Key == "datetime") {
 			if t, ok := parseTime(pair.Value); ok {
 				timestamp = t
 				hasTimestamp = true
