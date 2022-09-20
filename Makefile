@@ -56,11 +56,11 @@ lint-fix: lint-md-fix lint-go-fix
 
 .PHONY: lint-md
 lint-md:
-	npx remark . .github
+	npx remark .
 
 .PHONY: lint-md-fix
 lint-md-fix:
-	npx remark . .github -o
+	npx remark . -o
 
 .PHONY: lint-go
 lint-go:
