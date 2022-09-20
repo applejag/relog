@@ -137,6 +137,9 @@ func (r Relogger) processLine(b []byte) {
 	ev.Msg(message)
 }
 
+func (r Relogger) processLineLogFmt(b []byte) bool {
+}
+
 func findWithAnyName(node ast.Node, names ...string) (string, *ast.Node) {
 	var name string
 	var child *ast.Node
