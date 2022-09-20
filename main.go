@@ -2,16 +2,21 @@ package main
 
 import (
 	"bufio"
-	"errors"
+	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
+	"github.com/go-logfmt/logfmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/typ.v4/slices"
 )
 
 var parsedTime time.Time
@@ -33,61 +38,140 @@ func NewRelogger(r io.Reader) Relogger {
 
 type Relogger struct {
 	scanner *bufio.Scanner
+
+	mongoCompWidth    int
+	mongoContextWidth int
+	mongoIDWidth      int
+
+	buf bytes.Buffer
 }
 
-func (r Relogger) RelogAll() error {
+func (r *Relogger) RelogAll() error {
 	for r.scanner.Scan() {
 		r.processLine(r.scanner.Bytes())
 	}
 	return r.scanner.Err()
 }
 
-func (r Relogger) processLine(b []byte) {
-	root, err := sonic.Get(b)
-	if err != nil || root.Type() == ast.V_NULL {
-		log.WithLevel(zerolog.NoLevel).Err(errors.New("line was not JSON formatted")).Msg(string(b))
+func (r *Relogger) processLine(b []byte) {
+	if r.processLineJson(b) {
 		return
 	}
-	if root.Type() != ast.V_ARRAY && root.Type() != ast.V_OBJECT {
-		s, err := root.String()
-		if err != nil {
-			log.WithLevel(zerolog.NoLevel).Err(err).Msg(string(b))
-		} else {
-			log.WithLevel(zerolog.NoLevel).Msg(s)
-		}
+	if r.processLineLogFmt(b) {
 		return
+	}
+	log.WithLevel(zerolog.NoLevel).Msg(string(b))
+}
+
+func (r *Relogger) processLineJson(b []byte) bool {
+	if r.buf.Len() > 0 {
+		r.buf.Write(b)
+		b = r.buf.Bytes()
+	}
+	root, err := sonic.Get(b)
+	if err != nil {
+		if isSonicEOFErr(err) {
+			if r.buf.Len() == 0 {
+				r.buf.Write(b)
+			}
+			return true
+		}
+		r.buf.Reset()
+		return false
+	}
+	r.buf.Reset()
+	if root.Type() != ast.V_OBJECT {
+		return false
 	}
 	var (
-		level   = zerolog.NoLevel
-		message = ""
+		level            = zerolog.NoLevel
+		message          = ""
+		isMongoDBLogging = false
+		ignoreNodes      []string
 	)
-	levelNodeName, levelNode := findWithAnyName(root, "level", "lvl")
+	levelNodeName, levelNode := findWithAnyName(root, "level", "lvl", "severity")
 	if levelNode != nil {
-		if levelStr, err := levelNode.String(); err != nil {
+		if levelStr, err := levelNode.String(); err == nil {
 			level = parseLevel(levelStr)
-		} else {
-			levelNode = nil
-			levelNodeName = ""
+			ignoreNodes = append(ignoreNodes, levelNodeName)
+		}
+	} else {
+		// MongoDB styled logging
+		// https://www.mongodb.com/docs/manual/reference/log-messages/#std-label-log-severity-levels
+		levelNodeName, levelNode = findWithAnyName(root, "s")
+		if levelNode != nil {
+			if levelStr, err := levelNode.String(); err == nil {
+				if lvl, ok := parseMongoDBLevel(levelStr); ok {
+					level = lvl
+					isMongoDBLogging = true
+					ignoreNodes = append(ignoreNodes, levelNodeName)
+				}
+			}
 		}
 	}
 
 	messageNodeName, messageNode := findWithAnyName(root, "message", "msg")
 	if messageNode != nil {
-		if messageStr, err := messageNode.String(); err != nil {
+		if messageStr, err := messageNode.String(); err == nil {
 			message = messageStr
-		} else {
-			messageNode = nil
-			messageNodeName = ""
+			ignoreNodes = append(ignoreNodes, messageNodeName)
+
+			if isMongoDBLogging {
+				_, componentNode := findWithAnyName(root, "c")
+				_, contextNode := findWithAnyName(root, "ctx")
+				_, idNode := findWithAnyName(root, "id")
+				if componentNode != nil && contextNode != nil && idNode != nil {
+					componentStr, _ := componentNode.String()
+					contextStr, _ := contextNode.String()
+					idStr, _ := idNode.String()
+
+					r.mongoCompWidth, componentStr = padString(r.mongoCompWidth, componentStr)
+					r.mongoContextWidth, contextStr = padString(r.mongoContextWidth, contextStr)
+					r.mongoIDWidth, idStr = padString(r.mongoIDWidth, idStr)
+
+					message = fmt.Sprintf("[%s|%s|%s] %s", componentStr, contextStr, idStr, message)
+				} else {
+					isMongoDBLogging = false
+				}
+			}
 		}
 	}
 
 	timestampNodeName, timestampNode := findWithAnyName(root, "time", "timestamp", "datetime")
 	if t, ok := parseTimestampNode(timestampNode); ok {
 		parsedTime = t
-	} else {
-		timestampNode = nil
-		timestampNodeName = ""
-		parsedTime = time.Now()
+		ignoreNodes = append(ignoreNodes, timestampNodeName)
+	} else if isMongoDBLogging {
+		timestampNode = root.GetByPath("t", "$date")
+		if t, ok := parseTimestampNode(timestampNode); ok {
+			parsedTime = t
+		}
+	}
+
+	if isMongoDBLogging {
+		attrNode := root.Get("attr")
+		if attrNode != nil {
+			root = *attrNode
+		}
+	}
+
+	stacktraceNodeName, stacktraceNode := findWithAnyName(root, "stacktrace", "stack")
+	if stacktraceNode != nil {
+		ignoreNodes = append(ignoreNodes, stacktraceNodeName)
+		if stacktraceNode.Type() == ast.V_ARRAY {
+			children, _ := stacktraceNode.ArrayUseNode()
+			var sb strings.Builder
+			for _, child := range children {
+				childStr, _ := child.String()
+				sb.WriteString(childStr)
+				sb.WriteString("\n\t")
+			}
+			message = fmt.Sprintf("%s\n\tSTACKTRACE\n\t==========\n\t%s", message, sb.String())
+		} else {
+			stacktraceStr, _ := stacktraceNode.String()
+			stacktraceStr = strings.ReplaceAll(stacktraceStr, "\n", "\n\t")
+			message = fmt.Sprintf("%s\n\tSTACKTRACE\n\t==========\n\t%s", message, stacktraceStr)
+		}
 	}
 
 	ev := log.WithLevel(level)
@@ -97,13 +181,7 @@ func (r Relogger) processLine(b []byte) {
 			return true
 		}
 		key := *path.Key
-		if levelNode != nil && key == levelNodeName {
-			return true // skip, already processed
-		}
-		if messageNode != nil && key == messageNodeName {
-			return true // skip, already processed
-		}
-		if timestampNode != nil && key == timestampNodeName {
+		if slices.Contains(ignoreNodes, key) {
 			return true // skip, already processed
 		}
 		switch node.Type() {
@@ -135,9 +213,70 @@ func (r Relogger) processLine(b []byte) {
 		return true
 	})
 	ev.Msg(message)
+	return true
 }
 
 func (r Relogger) processLineLogFmt(b []byte) bool {
+	d := logfmt.NewDecoder(bytes.NewReader(b))
+	if !d.ScanRecord() {
+		return false
+	}
+	var (
+		timestamp    time.Time
+		hasTimestamp bool
+		level        = zerolog.NoLevel
+		hasLevel     bool
+		message      string
+		hasMessage   bool
+	)
+	type Pair struct {
+		Key   string
+		Value string
+	}
+	var fields []Pair
+	for d.ScanKeyval() {
+		pair := Pair{string(d.Key()), string(d.Value())}
+		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "datetime") {
+			if t, ok := parseTime(pair.Value); ok {
+				timestamp = t
+				hasTimestamp = true
+				continue
+			}
+		} else if !hasLevel && (pair.Key == "level" || pair.Key == "lvl" || pair.Key == "severity") {
+			level = parseLevel(pair.Value)
+			hasLevel = true
+			continue
+		} else if !hasMessage && (pair.Key == "message" || pair.Key == "msg") {
+			message = pair.Value
+			hasMessage = true
+			continue
+		}
+		fields = append(fields, pair)
+	}
+	if hasTimestamp {
+		parsedTime = timestamp
+	} else {
+		parsedTime = time.Time{}
+	}
+	ev := log.WithLevel(level)
+	for _, pair := range fields {
+		if i, err := strconv.ParseInt(pair.Value, 10, 64); err == nil {
+			ev = ev.Int64(pair.Key, i)
+		} else if f, err := strconv.ParseFloat(pair.Value, 64); err == nil {
+			ev = ev.Float64(pair.Key, f)
+		} else if pair.Value == "true" {
+			ev = ev.Bool(pair.Key, true)
+		} else if pair.Value == "false" {
+			ev = ev.Bool(pair.Key, false)
+		} else {
+			ev = ev.Str(pair.Key, pair.Value)
+		}
+	}
+	if len(fields) == 0 && !hasMessage && !hasLevel && !hasTimestamp {
+		return false
+	}
+	ev.Msg(message)
+	return true
 }
 
 func findWithAnyName(node ast.Node, names ...string) (string, *ast.Node) {
@@ -161,11 +300,30 @@ func findWithAnyName(node ast.Node, names ...string) (string, *ast.Node) {
 }
 
 func parseLevel(levelStr string) zerolog.Level {
-	level, err := zerolog.ParseLevel(levelStr)
+	level, err := zerolog.ParseLevel(strings.ToLower(levelStr))
 	if err != nil {
 		return zerolog.NoLevel
 	}
 	return level
+}
+
+func parseMongoDBLevel(levelStr string) (zerolog.Level, bool) {
+	switch levelStr {
+	case "F":
+		return zerolog.FatalLevel, true
+	case "E":
+		return zerolog.ErrorLevel, true
+	case "W":
+		return zerolog.WarnLevel, true
+	case "I":
+		return zerolog.InfoLevel, true
+	case "D1":
+		return zerolog.DebugLevel, true
+	case "D2", "D3", "D4", "D5":
+		return zerolog.TraceLevel, true
+	default:
+		return zerolog.NoLevel, false
+	}
 }
 
 func parseTimestampNode(node *ast.Node) (time.Time, bool) {
@@ -194,6 +352,22 @@ func parseTime(str string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+var eofErrRegex = regexp.MustCompile(`^"Syntax error at index \d+: eof`)
+
+func isSonicEOFErr(err error) bool {
+	return eofErrRegex.MatchString(err.Error())
+}
+
+func padString(prevMax int, str string) (int, string) {
+	if len(str) == prevMax {
+		return prevMax, str
+	}
+	if len(str) > prevMax {
+		return len(str), str
+	}
+	return prevMax, str + strings.Repeat(" ", prevMax-len(str))
 }
 
 func loggerSetup() error {
