@@ -23,6 +23,12 @@ Requires Go 1.19 (or higher)
 go install github.com/jilleJr/relog@latest
 ```
 
+> :warning: Currently depends on the `bytedance/sonic` JSON parsing library
+> which has a strong dependency on Amd64 architecture.
+>
+> In other words, this does not work on ARM
+> (such as Mac M1 or some Windows Surface laptops)
+
 ## Example
 
 ### MongoDB logs
