@@ -155,7 +155,7 @@ func (r *Relogger) processLineJson(b []byte) bool {
 		}
 	}
 
-	stacktraceNodeName, stacktraceNode := findWithAnyName(root, "stacktrace", "stack")
+	stacktraceNodeName, stacktraceNode := findWithAnyName(root, "stacktrace", "stack_trace", "stack")
 	if stacktraceNode != nil {
 		ignoreNodes = append(ignoreNodes, stacktraceNodeName)
 		if stacktraceNode.Type() == ast.V_ARRAY {
