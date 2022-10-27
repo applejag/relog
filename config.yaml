@@ -1,0 +1,43 @@
+
+patterns:
+  # First time to remove from "kubectl logs --timestamps" logs
+  - leading-timestamp:
+      layouts:
+        - "2006-01-02T15:04:05Z07:00"
+      trim: true
+
+  # Second time to remove from application logs
+  - leading-timestamp:
+      layouts:
+        - "2006-01-02T15:04:05Z07:00"
+        - "2006-01-02T15:04:05Z0700"
+        - "Jan-02 15:04"
+        - "02-01-06-15:04:05"
+      trim: true
+
+  - json: # MongoDB logs
+      required-fields:
+        - t # timestamp
+        - s # severity
+        - c # component
+        - ctx # context
+        - id
+        - msg # message
+      field-overrides:
+        timestamp:
+          field: t
+        severity:
+          field: s
+        message:
+          expr: >-
+            fmt.Sprintf("[%s|%s|%s] %s",
+              FieldPadRight("c"),
+              FieldPadRight("ctx"),
+              FieldPadRight("id"),
+              Field("msg"))
+      extra-fields:
+        expr:
+
+  - json:
+
+  - logfmt:
