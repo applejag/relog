@@ -89,7 +89,7 @@ func (r *Relogger) processLineJson(b []byte) bool {
 		isMongoDBLogging = false
 		ignoreNodes      []string
 	)
-	levelNodeName, levelNode := findWithAnyName(root, "level", "lvl", "severity")
+	levelNodeName, levelNode := findWithAnyName(root, "level", "lvl", "severity", "log.level")
 	if levelNode != nil {
 		if levelStr, err := levelNode.String(); err == nil {
 			level = parseLevel(levelStr)
