@@ -176,6 +176,17 @@ func (r *Relogger) processLineJson(b []byte) bool {
 
 	ev := log.WithLevel(level)
 
+	//level_value=20000 logger_name=akka.kafka.internal.CommittableSubSourceStageLogic sourceActorSystem=Main sourceThread=Main-akka.actor.default-dispatcher-6 thread_name=Main-akka.actor.default-dispatcher-5
+	callerNodes := findManyWithAllNames(root, "caller_file_name", "caller_line_number", "caller_class_name", "caller_method_name")
+	if callerNodes != nil {
+		callerFileName, _ := callerNodes[0].String()
+		callerLineNumber, _ := callerNodes[1].String()
+		callerClassName, _ := callerNodes[2].String()
+		callerMethodName, _ := callerNodes[3].String()
+		ev = ev.Str("caller", fmt.Sprintf("%s:%s (%s:%s)", callerFileName, callerLineNumber, callerClassName, callerMethodName))
+		ignoreNodes = append(ignoreNodes, "caller_file_name", "caller_line_number", "caller_class_name", "caller_method_name")
+	}
+
 	root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
 		if path.Key == nil {
 			return true
@@ -297,6 +308,29 @@ func findWithAnyName(node ast.Node, names ...string) (string, *ast.Node) {
 		return true
 	})
 	return name, child
+}
+
+func findManyWithAllNames(node ast.Node, names ...string) []*ast.Node {
+	nodes := make([]*ast.Node, len(names))
+	node.ForEach(func(path ast.Sequence, node *ast.Node) bool {
+		if path.Key == nil {
+			return false
+		}
+		key := *path.Key
+		for i, n := range names {
+			if key == n {
+				nodes[i] = node
+				return true
+			}
+		}
+		return true
+	})
+	for _, node := range nodes {
+		if node == nil {
+			return nil
+		}
+	}
+	return nodes
 }
 
 func parseLevel(levelStr string) zerolog.Level {
