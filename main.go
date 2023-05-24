@@ -32,16 +32,19 @@ func main() {
 
 func NewRelogger(r io.Reader) Relogger {
 	return Relogger{
-		scanner: bufio.NewScanner(os.Stdin),
+		scanner:      bufio.NewScanner(os.Stdin),
+		mongoComp:    NewPaddedString(100),
+		mongoContext: NewPaddedString(100),
+		mongoID:      NewPaddedString(100),
 	}
 }
 
 type Relogger struct {
 	scanner *bufio.Scanner
 
-	mongoCompWidth    int
-	mongoContextWidth int
-	mongoIDWidth      int
+	mongoComp    *PaddedString
+	mongoContext *PaddedString
+	mongoID      *PaddedString
 
 	buf bytes.Buffer
 }
@@ -126,9 +129,9 @@ func (r *Relogger) processLineJson(b []byte) bool {
 					contextStr, _ := contextNode.String()
 					idStr, _ := idNode.String()
 
-					r.mongoCompWidth, componentStr = padString(r.mongoCompWidth, componentStr)
-					r.mongoContextWidth, contextStr = padString(r.mongoContextWidth, contextStr)
-					r.mongoIDWidth, idStr = padString(r.mongoIDWidth, idStr)
+					componentStr = r.mongoComp.Next(componentStr)
+					contextStr = r.mongoContext.Next(contextStr)
+					idStr = r.mongoID.Next(idStr)
 
 					caller = fmt.Sprintf("[%s|%s|%s]", componentStr, contextStr, idStr)
 				} else {
@@ -396,16 +399,6 @@ var eofErrRegex = regexp.MustCompile(`^"Syntax error at index \d+: eof`)
 
 func isSonicEOFErr(err error) bool {
 	return eofErrRegex.MatchString(err.Error())
-}
-
-func padString(prevMax int, str string) (int, string) {
-	if len(str) == prevMax {
-		return prevMax, str
-	}
-	if len(str) > prevMax {
-		return len(str), str
-	}
-	return prevMax, str + strings.Repeat(" ", prevMax-len(str))
 }
 
 func loggerSetup() error {
