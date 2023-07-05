@@ -234,7 +234,12 @@ func (r *Relogger) processLineJson(b []byte) bool {
 	return true
 }
 
+var crudeLogfmtRegex = regexp.MustCompile(`^\w+=[^ ]+`)
+
 func (r Relogger) processLineLogFmt(b []byte) bool {
+	if !crudeLogfmtRegex.Match(b) {
+		return false
+	}
 	d := logfmt.NewDecoder(bytes.NewReader(b))
 	if !d.ScanRecord() {
 		return false
