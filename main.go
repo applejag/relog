@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -291,6 +292,8 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 			ev = ev.Bool(pair.Key, true)
 		} else if pair.Value == "false" {
 			ev = ev.Bool(pair.Key, false)
+		} else if pair.Key == "err" {
+			ev = ev.Err(errors.New(pair.Value))
 		} else {
 			ev = ev.Str(pair.Key, pair.Value)
 		}
