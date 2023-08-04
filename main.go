@@ -252,6 +252,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 		hasLevel     bool
 		message      string
 		hasMessage   bool
+		hasCaller    bool
 	)
 	type Pair struct {
 		Key   string
@@ -260,7 +261,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 	var fields []Pair
 	for d.ScanKeyval() {
 		pair := Pair{string(d.Key()), string(d.Value())}
-		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "@timestamp" || pair.Key == "ts" || pair.Key == "datetime") {
+		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "@timestamp" || pair.Key == "ts" || pair.Key == "t" || pair.Key == "datetime") {
 			if t, ok := parseTime(pair.Value); ok {
 				timestamp = t
 				hasTimestamp = true
@@ -274,6 +275,8 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 			message = pair.Value
 			hasMessage = true
 			continue
+		} else if !hasCaller && (pair.Key == "caller") {
+			hasCaller = true
 		}
 		fields = append(fields, pair)
 	}
@@ -294,6 +297,8 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 			ev = ev.Bool(pair.Key, false)
 		} else if pair.Key == "err" {
 			ev = ev.Err(errors.New(pair.Value))
+		} else if pair.Key == "logger" && !hasCaller {
+			ev = ev.Str("caller", pair.Value)
 		} else {
 			ev = ev.Str(pair.Key, pair.Value)
 		}
