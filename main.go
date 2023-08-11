@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
@@ -41,12 +43,24 @@ func NewRelogger(r io.Reader) Relogger {
 	}
 }
 
+type Processor byte
+
+const (
+	ProcessorNone Processor = iota
+	ProcessorJSON
+	ProcessorLogfmt
+	ProcessorString
+)
+
 type Relogger struct {
 	scanner *bufio.Scanner
 
 	mongoComp    *PaddedString
 	mongoContext *PaddedString
 	mongoID      *PaddedString
+
+	lastProcessor   Processor
+	lastStringLevel zerolog.Level
 
 	buf bytes.Buffer
 }
@@ -60,12 +74,15 @@ func (r *Relogger) RelogAll() error {
 
 func (r *Relogger) processLine(b []byte) {
 	if r.processLineJson(b) {
+		r.lastProcessor = ProcessorJSON
 		return
 	}
 	if r.processLineLogFmt(b) {
+		r.lastProcessor = ProcessorLogfmt
 		return
 	}
 	r.processLineString(string(b))
+	r.lastProcessor = ProcessorString
 }
 
 type LevelRegex struct {
@@ -102,19 +119,32 @@ var levelRegexes = []LevelRegex{
 	},
 }
 
+func startsWithWhitespace(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return false
+	}
+	return unicode.IsSpace(r)
+}
+
 func (r *Relogger) processLineString(s string) {
 	level := zerolog.NoLevel
-	for _, matcher := range levelRegexes {
-		replaced := matcher.Regex.ReplaceAllStringFunc(s, func(match string) string {
-			return matcher.Color.Sprint(match)
-		})
-		if len(replaced) != len(s) {
-			level = matcher.Level
-			s = replaced
-			break
+	if r.lastProcessor == ProcessorString && startsWithWhitespace(s) {
+		level = r.lastStringLevel
+	} else {
+		for _, matcher := range levelRegexes {
+			replaced := matcher.Regex.ReplaceAllStringFunc(s, func(match string) string {
+				return matcher.Color.Sprint(match)
+			})
+			if len(replaced) != len(s) {
+				level = matcher.Level
+				s = replaced
+				break
+			}
 		}
 	}
 	log.WithLevel(level).Msg(s)
+	r.lastStringLevel = level
 }
 
 func (r *Relogger) processLineJson(b []byte) bool {
