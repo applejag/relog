@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/bytedance/sonic v1.8.7
+	github.com/fatih/color v1.15.0
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/rs/zerolog v1.29.1
 	gopkg.in/typ.v4 v4.2.0

@@ -14,6 +14,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
+	"github.com/fatih/color"
 	"github.com/go-logfmt/logfmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -64,42 +65,56 @@ func (r *Relogger) processLine(b []byte) {
 	if r.processLineLogFmt(b) {
 		return
 	}
-	r.processLineBare(b)
+	r.processLineString(string(b))
 }
 
 type LevelRegex struct {
 	Regex *regexp.Regexp
 	Level zerolog.Level
+	Color *color.Color
 }
 
 var levelRegexes = []LevelRegex{
 	{
+		Regex: regexp.MustCompile(`\b(?:TRACE|trace|TRC|trc|T\d+)\b`),
+		Level: zerolog.TraceLevel,
+		Color: color.New(color.FgMagenta),
+	},
+	{
 		Regex: regexp.MustCompile(`\b(?:DEBUG|debug|DBG|dbg|D\d+)\b`),
 		Level: zerolog.DebugLevel,
+		Color: color.New(color.FgYellow),
 	},
 	{
 		Regex: regexp.MustCompile(`\b(?:INFO|info|INF|inf|I\d+)\b`),
 		Level: zerolog.InfoLevel,
+		Color: color.New(color.FgGreen),
 	},
 	{
 		Regex: regexp.MustCompile(`\b(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b`),
 		Level: zerolog.WarnLevel,
+		Color: color.New(color.FgRed),
 	},
 	{
 		Regex: regexp.MustCompile(`\b(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b`),
 		Level: zerolog.ErrorLevel,
+		Color: color.New(color.FgRed, color.Bold),
 	},
 }
 
-func (r *Relogger) processLineBare(b []byte) {
+func (r *Relogger) processLineString(s string) {
 	level := zerolog.NoLevel
 	for _, matcher := range levelRegexes {
-		if matcher.Regex.Match(b) {
+		replaced := matcher.Regex.ReplaceAllStringFunc(s, func(match string) string {
+			return matcher.Color.Sprint(match)
+		})
+		if len(replaced) != len(s) {
 			level = matcher.Level
+			s = replaced
 			break
 		}
 	}
-	log.WithLevel(level).Msg(string(b))
+	log.WithLevel(level).Msg(s)
 }
 
 func (r *Relogger) processLineJson(b []byte) bool {
