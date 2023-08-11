@@ -64,7 +64,42 @@ func (r *Relogger) processLine(b []byte) {
 	if r.processLineLogFmt(b) {
 		return
 	}
-	log.WithLevel(zerolog.NoLevel).Msg(string(b))
+	r.processLineBare(b)
+}
+
+type LevelRegex struct {
+	Regex *regexp.Regexp
+	Level zerolog.Level
+}
+
+var levelRegexes = []LevelRegex{
+	{
+		Regex: regexp.MustCompile(`\b(?:DEBUG|debug|DBG|dbg|D\d+)\b`),
+		Level: zerolog.DebugLevel,
+	},
+	{
+		Regex: regexp.MustCompile(`\b(?:INFO|info|INF|inf|I\d+)\b`),
+		Level: zerolog.InfoLevel,
+	},
+	{
+		Regex: regexp.MustCompile(`\b(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b`),
+		Level: zerolog.WarnLevel,
+	},
+	{
+		Regex: regexp.MustCompile(`\b(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b`),
+		Level: zerolog.ErrorLevel,
+	},
+}
+
+func (r *Relogger) processLineBare(b []byte) {
+	level := zerolog.NoLevel
+	for _, matcher := range levelRegexes {
+		if matcher.Regex.Match(b) {
+			level = matcher.Level
+			break
+		}
+	}
+	log.WithLevel(level).Msg(string(b))
 }
 
 func (r *Relogger) processLineJson(b []byte) bool {
