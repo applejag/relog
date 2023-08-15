@@ -93,27 +93,27 @@ type LevelRegex struct {
 
 var levelRegexes = []LevelRegex{
 	{
-		Regex: regexp.MustCompile(`\b(?:TRACE|trace|TRC|trc|T\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:TRACE|trace|TRC|trc|T\d+)\b`),
 		Level: zerolog.TraceLevel,
 		Color: color.New(color.FgMagenta),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:DEBUG|debug|DBG|dbg|D\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:DEBUG|debug|DBG|dbg|D\d+)\b`),
 		Level: zerolog.DebugLevel,
 		Color: color.New(color.FgYellow),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:INFO|info|INF|inf|I\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:INFO|info|INF|inf|I\d+)\b`),
 		Level: zerolog.InfoLevel,
 		Color: color.New(color.FgGreen),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b`),
 		Level: zerolog.WarnLevel,
 		Color: color.New(color.FgRed),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b`),
 		Level: zerolog.ErrorLevel,
 		Color: color.New(color.FgRed, color.Bold),
 	},
@@ -127,6 +127,15 @@ func startsWithWhitespace(s string) bool {
 	return unicode.IsSpace(r)
 }
 
+var ansiCutterRegex = regexp.MustCompile(`^\d*m`)
+func cutANSIPart(s string) (string, string, bool) {
+	ansiPart := ansiCutterRegex.FindString(s)
+	if ansiPart == "" {
+		return "", s, false
+	}
+	return ansiPart, s[len(ansiPart):], true
+}
+
 func (r *Relogger) processLineString(s string) {
 	level := zerolog.NoLevel
 	if r.lastProcessor == ProcessorString && startsWithWhitespace(s) {
@@ -134,6 +143,10 @@ func (r *Relogger) processLineString(s string) {
 	} else {
 		for _, matcher := range levelRegexes {
 			replaced := matcher.Regex.ReplaceAllStringFunc(s, func(match string) string {
+				ansiPart, cleanPart, ok := cutANSIPart(match)
+				if ok {
+					return ansiPart + matcher.Color.Sprint(cleanPart)
+				}
 				return matcher.Color.Sprint(match)
 			})
 			if len(replaced) != len(s) {
