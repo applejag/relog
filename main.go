@@ -93,27 +93,27 @@ type LevelRegex struct {
 
 var levelRegexes = []LevelRegex{
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:TRACE|trace|TRC|trc|T\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:TRACE|trace|TRC|trc|T\d+)\b\s*`),
 		Level: zerolog.TraceLevel,
 		Color: color.New(color.FgMagenta),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:DEBUG|debug|DBG|dbg|D\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:DEBUG|debug|DBG|dbg|D\d+)\b\s*`),
 		Level: zerolog.DebugLevel,
 		Color: color.New(color.FgYellow),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:INFO|info|INF|inf|I\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:INFO|info|INF|inf|I\d+)\b\s*`),
 		Level: zerolog.InfoLevel,
 		Color: color.New(color.FgGreen),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b\s*`),
 		Level: zerolog.WarnLevel,
 		Color: color.New(color.FgRed),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b`),
+		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b\s*`),
 		Level: zerolog.ErrorLevel,
 		Color: color.New(color.FgRed, color.Bold),
 	},
@@ -138,25 +138,46 @@ func cutANSIPart(s string) (string, string, bool) {
 
 func (r *Relogger) processLineString(s string) {
 	level := zerolog.NoLevel
+
+	if t, suffix, ok := CutPrefixFuzzyTime(s); ok {
+		s = suffix
+		parsedTime = t
+	} else {
+		parsedTime = time.Time{}
+	}
+
 	if r.lastProcessor == ProcessorString && startsWithWhitespace(s) {
 		level = r.lastStringLevel
 	} else {
 		for _, matcher := range levelRegexes {
+			var matchedAny bool
 			replaced := matcher.Regex.ReplaceAllStringFunc(s, func(match string) string {
+				matchedAny = true
+				if strings.HasPrefix(s, match) {
+					return ""
+				}
 				ansiPart, cleanPart, ok := cutANSIPart(match)
 				if ok {
 					return ansiPart + matcher.Color.Sprint(cleanPart)
 				}
 				return matcher.Color.Sprint(match)
 			})
-			if len(replaced) != len(s) {
+			if matchedAny {
 				level = matcher.Level
 				s = replaced
 				break
 			}
 		}
 	}
-	log.WithLevel(level).Msg(s)
+
+	ev := log.WithLevel(level)
+
+	if inside, suffix, ok := cutParentheses(s, '[', ']'); ok {
+		s = suffix
+		ev = ev.Str("caller", inside)
+	}
+
+	ev.Msg(s)
 	r.lastStringLevel = level
 }
 
@@ -355,7 +376,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 	for d.ScanKeyval() {
 		pair := Pair{string(d.Key()), string(d.Value())}
 		if !hasTimestamp && (pair.Key == "time" || pair.Key == "timestamp" || pair.Key == "@timestamp" || pair.Key == "ts" || pair.Key == "t" || pair.Key == "datetime") {
-			if t, ok := parseTime(pair.Value); ok {
+			if t, ok := ParseFuzzyTime(pair.Value); ok {
 				timestamp = t
 				hasTimestamp = true
 				continue
@@ -482,21 +503,7 @@ func parseTimestampNode(node *ast.Node) (time.Time, bool) {
 			return time.Unix(i, 0), true
 		}
 	} else if timestampStr, err := node.String(); err == nil {
-		return parseTime(timestampStr)
-	}
-	return time.Time{}, false
-}
-
-var knownTimestampLayouts = []string{
-	time.RFC3339,
-	time.RFC3339Nano,
-}
-
-func parseTime(str string) (time.Time, bool) {
-	for _, layout := range knownTimestampLayouts {
-		if t, err := time.Parse(layout, str); err == nil {
-			return t, true
-		}
+		return ParseFuzzyTime(timestampStr)
 	}
 	return time.Time{}, false
 }
