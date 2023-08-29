@@ -93,27 +93,27 @@ type LevelRegex struct {
 
 var levelRegexes = []LevelRegex{
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b\s*`),
+		Regex: regexp.MustCompile(`(?:\[\s*)?\b(?:\d*m)?(?:ERROR|error|ERRO|erro|ERR|err|E\d+)\b\s*(?:\]\s*)?`),
 		Level: zerolog.ErrorLevel,
 		Color: color.New(color.FgRed, color.Bold),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b\s*`),
+		Regex: regexp.MustCompile(`(?:\[\s*)?\b(?:\d*m)?(?:WARNING|warning|WARN|warn|WRN|wrn|W\d+)\b\s*(?:\]\s*)?`),
 		Level: zerolog.WarnLevel,
 		Color: color.New(color.FgRed),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:INFO|info|INF|inf|I\d+)\b\s*`),
+		Regex: regexp.MustCompile(`(?:\[\s*)?\b(?:\d*m)?(?:INFO|info|INF|inf|I\d+)\b\s*(?:\]\s*)?`),
 		Level: zerolog.InfoLevel,
 		Color: color.New(color.FgGreen),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:DEBUG|debug|DBG|dbg|D\d+)\b\s*`),
+		Regex: regexp.MustCompile(`(?:\[\s*)?\b(?:\d*m)?(?:DEBUG|debug|DBG|dbg|D\d+)\b\s*(?:\]\s*)?`),
 		Level: zerolog.DebugLevel,
 		Color: color.New(color.FgYellow),
 	},
 	{
-		Regex: regexp.MustCompile(`\b(?:\d*m)?(?:TRACE|trace|TRC|trc|T\d+)\b\s*`),
+		Regex: regexp.MustCompile(`(?:\[\s*)?\b(?:\d*m)?(?:TRACE|trace|TRC|trc|T\d+)\b\s*(?:\]\s*)?`),
 		Level: zerolog.TraceLevel,
 		Color: color.New(color.FgMagenta),
 	},
