@@ -411,7 +411,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 			ev = ev.Bool(pair.Key, false)
 		} else if pair.Key == "err" {
 			ev = ev.Err(errors.New(pair.Value))
-		} else if pair.Key == "logger" && !hasCaller {
+		} else if (pair.Key == "logger" || pair.Key == "source") && !hasCaller {
 			ev = ev.Str("caller", pair.Value)
 		} else {
 			ev = ev.Str(pair.Key, pair.Value)
