@@ -49,6 +49,7 @@ const (
 	ProcessorNone Processor = iota
 	ProcessorJSON
 	ProcessorLogfmt
+	ProcessorZap
 	ProcessorString
 )
 
@@ -72,9 +73,24 @@ func (r *Relogger) RelogAll() error {
 	return r.scanner.Err()
 }
 
+var containerTimestampRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z `)
+
 func (r *Relogger) processLine(b []byte) {
+	parsedTime = time.Time{}
+	if timestamp := containerTimestampRegex.Find(b); timestamp != nil {
+		b = b[len(timestamp):]
+		timestamp = timestamp[:len(timestamp)-1] // trim await the trailing space
+		if t, err := time.Parse(time.RFC3339Nano, string(timestamp)); err == nil {
+			parsedTime = t
+		}
+	}
+
 	if r.processLineJson(b) {
 		r.lastProcessor = ProcessorJSON
+		return
+	}
+	if r.processLineZap(b) {
+		r.lastProcessor = ProcessorZap
 		return
 	}
 	if r.processLineLogFmt(b) {
@@ -128,6 +144,7 @@ func startsWithWhitespace(s string) bool {
 }
 
 var ansiCutterRegex = regexp.MustCompile(`^\d*m`)
+
 func cutANSIPart(s string) (string, string, bool) {
 	ansiPart := ansiCutterRegex.FindString(s)
 	if ansiPart == "" {
@@ -142,8 +159,6 @@ func (r *Relogger) processLineString(s string) {
 	if t, suffix, ok := CutPrefixFuzzyTime(s); ok {
 		s = suffix
 		parsedTime = t
-	} else {
-		parsedTime = time.Time{}
 	}
 
 	if r.lastProcessor == ProcessorString && startsWithWhitespace(s) {
@@ -396,8 +411,6 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 	}
 	if hasTimestamp {
 		parsedTime = timestamp
-	} else {
-		parsedTime = time.Time{}
 	}
 	ev := log.WithLevel(level)
 	for _, pair := range fields {
@@ -421,6 +434,48 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 		return false
 	}
 	ev.Msg(message)
+	return true
+}
+
+var kubernetesLogRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*([A-Z]+)\s*(?:([a-z0-9\.\-]+)\s{2,})?([^\{]+)(\{.*)?$`)
+
+func (r *Relogger) processLineZap(b []byte) bool {
+	groups := kubernetesLogRegex.FindSubmatch(b)
+	if groups == nil {
+		return false
+	}
+	timeGroup := groups[1]
+	levelGroup := groups[2]
+	callerGroup := groups[3]
+	messageGroup := bytes.TrimSpace(groups[4])
+	jsonGroup := groups[5]
+
+	timeParsed, err := time.Parse(time.RFC3339, string(timeGroup))
+	if err != nil {
+		return false
+	}
+
+	var data map[string]any
+	if len(jsonGroup) > 0 {
+		if err := sonic.Unmarshal(jsonGroup, &data); err != nil {
+			return false
+		}
+	}
+
+	parsedTime = timeParsed
+
+	level := parseLevel(string(levelGroup))
+	ev := log.WithLevel(level)
+
+	if len(callerGroup) > 0 {
+		ev = ev.Str("caller", string(callerGroup))
+	}
+
+	for k, v := range data {
+		ev = ev.Interface(k, v)
+	}
+
+	ev.Msg(string(messageGroup))
 	return true
 }
 
