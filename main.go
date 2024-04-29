@@ -437,7 +437,7 @@ func (r Relogger) processLineLogFmt(b []byte) bool {
 	return true
 }
 
-var kubernetesLogRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\t([A-Z]+)\t(?:([a-z0-9\.\-]+)\t)?([^\{]+)(?:\t(\{.*))?$`)
+var kubernetesLogRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)Z)\t([A-Z]+)\t(?:([a-z0-9\.\-]+)\t)?([^\{]+)(?:\t(\{.*))?$`)
 
 func (r *Relogger) processLineZap(b []byte) bool {
 	groups := kubernetesLogRegex.FindSubmatch(b)
