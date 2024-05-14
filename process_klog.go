@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"regexp"
 	"time"
 
@@ -16,7 +15,6 @@ var klogLogRegex = regexp.MustCompile(`^([EWIDT])(\d{4} \d{2}:\d{2}:\d{2}(?:\.\d
 func (r *Relogger) processLineKlog(b []byte) bool {
 	groups := klogLogRegex.FindSubmatch(b)
 	if groups == nil {
-		fmt.Println("doesnt match regex")
 		return false
 	}
 	levelGroup := groups[1]
@@ -29,7 +27,6 @@ func (r *Relogger) processLineKlog(b []byte) bool {
 	// RFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
 	timeParsed, err := time.Parse("0102 15:04:05.999999999", string(timeGroup))
 	if err != nil {
-		fmt.Println("doesnt match time", err)
 		return false
 	}
 
