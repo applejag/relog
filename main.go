@@ -240,10 +240,15 @@ func findManyWithAllNames(node ast.Node, names ...string) []*ast.Node {
 
 func parseLevel(levelStr string) zerolog.Level {
 	level, err := zerolog.ParseLevel(strings.ToLower(levelStr))
-	if err != nil {
-		return zerolog.NoLevel
+	if err == nil {
+		return level
 	}
-	return level
+	for _, levelRegex := range levelRegexes {
+		if levelRegex.Regex.MatchString(levelStr) {
+			return levelRegex.Level
+		}
+	}
+	return zerolog.NoLevel
 }
 
 func parseMongoDBLevel(levelStr string) (zerolog.Level, bool) {
