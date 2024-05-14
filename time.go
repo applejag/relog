@@ -34,7 +34,7 @@ func ParsePrefixFuzzyTime(str string) (time.Time, string, bool) {
 		if !errors.As(err, &parseErr) {
 			continue
 		}
-		if !strings.HasPrefix(": extra text:",  parseErr.Message) {
+		if !strings.HasPrefix(": extra text:", parseErr.Message) {
 			continue
 		}
 		index := strings.Index(str, parseErr.ValueElem)
@@ -67,7 +67,7 @@ func cutParentheses(s string, start, end rune) (string, string, bool) {
 	}
 	for i, r := range s[size:] {
 		if r == end {
-			return s[size:size+i], strings.TrimPrefix(s[size+i+utf8.RuneLen(r):], " "), true
+			return s[size : size+i], strings.TrimPrefix(s[size+i+utf8.RuneLen(r):], " "), true
 		}
 	}
 	return "", s, false
